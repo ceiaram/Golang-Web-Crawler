@@ -2,34 +2,54 @@
 package main
 
 import (
+	"bufio"
+	"strings"
+	"os"
 	"fmt"
 	"log"
 	"github.com/gocolly/colly"
 )
 
 func main() {
-	// Define the baseURL and startingURL.
-	baseURL := "www.example.com"
-	startingURL := "https://" + baseURL
+	// Define the baseURL list for user input
+	inputURLs := [] string {}
 
-	// Specify the allowedUrls, limited to only the baseURL.
-	allowedUrls := []string{baseURL}
+	// Create scanner to read user input (urls)
+	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Print("Enter website urls (separated by spaces): ")
 
-	// Print the startingURL for debugging purposes.
-	fmt.Println(startingURL)
+	// Read the input from the user
+	for scanner.Scan(){
+		input := scanner.Text()
+
+		// Split the input into individual URLs (assuming they are separated by spaces)
+		urls := strings.Fields(input)
+
+		// Check if valid URLs are provided 
+		if len(urls) > 0 {
+			//Append input to list 
+			inputURLs = append(inputURLs, urls...)
+			break
+		} else {
+			fmt.Println("Please enter at least one valid URL.")
+			fmt.Print("Enter website urls (separated by spaces): ")
+		}
+	}
+
+	// Print the list of URLs
+	fmt.Println("List of URLs:", inputURLs)
 
 	// Create a new Colly collector (crawler) with the specified settings.
 	c := colly.NewCollector(
-		colly.AllowedDomains(allowedUrls...), // Set the allowed domains.
 		colly.MaxDepth(0),                    // Set the maximum depth of the crawling process (0 means no limit).
+		colly.Async(true),          // Enable asynchronous scraping.
 		colly.IgnoreRobotsTxt(),              // Ignore the robots.txt file.
 	)
 
 	// The following are various callback functions to handle different events during the crawling process:
-
-	// OnRequest is triggered when the program sends a request to the server.
+	// Set a custom User-Agent string in the request headers
 	c.OnRequest(func(r *colly.Request) {
-		fmt.Println("Visiting", r.URL)
+		r.Headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
 	})
 
 	// OnError is triggered if an error occurs while processing a request.
@@ -39,13 +59,13 @@ func main() {
 
 	// OnResponse is triggered when the program receives a response from the server.
 	c.OnResponse(func(r *colly.Response) {
-		fmt.Println("Visited", r.Request.URL)
+		fmt.Printf("Visited: %s (Status: %d, Content-Type: %s)\n", r.Request.URL, r.StatusCode, r.Headers.Get("Content-Type"))
 	})
 
 	// OnHTML is triggered when the program accesses an HTML resource.
-	// It looks for anchor tags and then recursively visits the links they point to.
-	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
-		e.Request.Visit(e.Attr("href"))
+	// It looks for the page title and prints it.
+	c.OnHTML("title", func(e *colly.HTMLElement) {
+		fmt.Printf("Page Title: %s\n", e.Text)
 	})
 
 	// OnHTML is triggered when the program accesses an HTML resource.
@@ -66,7 +86,15 @@ func main() {
 		fmt.Println("Finished", r.Request.URL)
 	})
 
-	// Start the crawling process by visiting the startingURL.
-	c.Visit(startingURL)
+	// Start the crawling process by visiting the inputURLs.
+	for _, url := range inputURLs {
+		fmt.Println("URL:", url)
+		err := c.Visit(url)
+		if err != nil {
+			log.Println("Error visiting URL:", url, "Error:", err)
+		}
+	}
 	
+	// Wait for the asynchronous scraping to finish.
+	c.Wait()
 }
