@@ -7,8 +7,43 @@ import (
 	"os"
 	"fmt"
 	"log"
+	"net/url"
 	"github.com/gocolly/colly"
 )
+// CustomError is a struct to hold error messages and additional information.
+type CustomError struct {
+	Message string
+	Code    int
+}
+
+// Implement the error interface for CustomError.
+func (e CustomError) Error() string {
+	return fmt.Sprintf("Error: %s (Code: %d)", e.Message, e.Code)
+}
+
+func checkURLValidity(inputURL string) error {
+	u, err := url.Parse(inputURL)
+	if err != nil {
+		// Return a CustomError instance for the parsing error
+		return CustomError{
+			Message: "There was a parsing error",
+			Code:    500,
+		}
+	}
+
+	// Check for a valid scheme (http or https)
+	if u.Scheme != "http" && u.Scheme != "https" {
+		// Return a CustomError instance for the HTTP error
+		return CustomError{
+			Message: "HTTP Error",
+			Code:    400,
+		}
+	}
+
+	// Return nil if the URL is valid
+	return nil
+}
+
 
 func main() {
 	// Define the baseURL list for user input
@@ -53,8 +88,8 @@ func main() {
 	})
 
 	// OnError is triggered if an error occurs while processing a request.
-	c.OnError(func(_ *colly.Response, err error) {
-		log.Println("Something went wrong:", err)
+	c.OnError(func(r *colly.Response, err error) {
+		log.Println("Something went wrong, https:", err)
 	})
 
 	// OnResponse is triggered when the program receives a response from the server.
@@ -87,11 +122,15 @@ func main() {
 	})
 
 	// Start the crawling process by visiting the inputURLs.
-	for _, url := range inputURLs {
-		fmt.Println("URL:", url)
-		err := c.Visit(url)
-		if err != nil {
-			log.Println("Error visiting URL:", url, "Error:", err)
+	for _, inputURL := range inputURLs {
+		fmt.Println("url: ", inputURL)
+
+		if err := checkURLValidity(inputURL); err != nil {
+			// Handle the error returned by checkURLValidity()
+			fmt.Println(err.Error())
+		} else {
+			// If the URL is valid, visit it using colly
+			c.Visit(inputURL)
 		}
 	}
 	
