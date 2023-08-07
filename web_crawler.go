@@ -82,9 +82,6 @@ func checkURLValidity(inputURL string) []error {
 	return errors
 }
 
-
-// ... (Imports and CustomError struct)
-
 func main() {
 	myApp := app.New()
 	myWindow := myApp.NewWindow("Go Web Crawler")
@@ -131,7 +128,8 @@ func main() {
 				crawlingLogs.SetText(crawlingLogs.Text + fmt.Sprintf("Something went wrong, https:%s\n\n", err))
 				wg.Done()
 			})
-
+			
+			newLine := widget.NewLabel("\n")
 			// Start the crawling process by visiting the inputURLs and checking for url validity.
 			for _, inputURL := range inputURLs {
 				wg.Add(1)
@@ -142,8 +140,9 @@ func main() {
 				if len(errors) > 0 {
 					crawlingLogs.SetText(crawlingLogs.Text + fmt.Sprintf("url: %s\n", inputURL))
 					for _, err := range errors {
-						crawlingLogs.SetText(crawlingLogs.Text + err.Error() + "\n\n")
+						crawlingLogs.SetText(crawlingLogs.Text + err.Error() + "\n")
 					}
+					newLine.SetText(newLine.Text)
 					wg.Done()
 					<-concurrentRequests // Release the slot in case of errors.
 				} else {
@@ -153,6 +152,8 @@ func main() {
 						<-concurrentRequests // Release the slot when the request is complete.
 					}(inputURL)
 				}
+
+				
 			}
 
 			// Wait for all goroutines to finish their work.
