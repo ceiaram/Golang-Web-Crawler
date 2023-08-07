@@ -21,27 +21,58 @@ func (e CustomError) Error() string {
 	return fmt.Sprintf("Error: %s (Code: %d)", e.Message, e.Code)
 }
 
-func checkURLValidity(inputURL string) error {
+//Check URL structure and SEO-friendliness
+func checkURLValidity(inputURL string) []error {
+	var errors []error
 	u, err := url.Parse(inputURL)
+
 	if err != nil {
 		// Return a CustomError instance for the parsing error
-		return CustomError{
+		errors = append(errors, CustomError{
 			Message: "There was a parsing error",
-			Code:    500,
-		}
+			Code: 500,
+		})
 	}
 
 	// Check for a valid scheme (http or https)
 	if u.Scheme != "http" && u.Scheme != "https" {
 		// Return a CustomError instance for the HTTP error
-		return CustomError{
+		errors = append(errors, CustomError{
 			Message: "HTTP Error",
-			Code:    400,
-		}
+			Code: 400,
+		})
 	}
 
-	// Return nil if the URL is valid
-	return nil
+	// Check for SEO-friendliness of the URL
+	// Define the maximum allowed URL length
+	maxURLLength := 100
+
+	// Compare the length of the URL's path with the maximum allowed length
+	if len(u.Path) > maxURLLength {
+		errors = append(errors, CustomError{
+			Message: "SEO-Friendliness violation length of URL's path is over 100",
+			Code: 199,
+		})
+	}
+	
+	// Check if the URL path is descriptive and readable (no query strings or fragments)
+	if u.RawQuery != "" || u.Fragment != "" {
+		errors = append(errors, CustomError{
+			Message: "SEO-Friendliness violation URL's path of either the query string or fragment is empty",
+			Code: 199,
+		})
+	}
+
+	// Check if the URL path contains only lowercase letters and hyphens (SEO-friendly characters)
+	if u.Path != strings.ToLower(u.Path) || strings.Contains(u.Path, "_") {
+		errors = append(errors, CustomError{
+			Message: "SEO-Friendliness Violation URL's path contains uppercase letters and/or hyphens",
+			Code: 199,
+		})
+	}
+
+	// Return all errors
+	return errors
 }
 
 
@@ -121,13 +152,15 @@ func main() {
 		fmt.Println("Finished", r.Request.URL)
 	})
 
-	// Start the crawling process by visiting the inputURLs.
+	// Start the crawling process by visiting the inputURLs and checking for url validity.
 	for _, inputURL := range inputURLs {
-		fmt.Println("url: ", inputURL)
-
-		if err := checkURLValidity(inputURL); err != nil {
-			// Handle the error returned by checkURLValidity()
-			fmt.Println(err.Error())
+		// Handle the list of errors returned by checkURLValidity()
+		errors := checkURLValidity(inputURL)
+		if len(errors) > 0 {
+			fmt.Println("url: ", inputURL)
+			for _, err := range errors {
+				fmt.Println(err.Error())
+			}
 		} else {
 			// If the URL is valid, visit it using colly
 			c.Visit(inputURL)
