@@ -1,15 +1,18 @@
-// Refernce: https://www.hoodoo.digital/blog/how-to-make-a-web-crawler-using-go-and-colly-tutorial
+// Refernce(s): https://www.hoodoo.digital/blog/how-to-make-a-web-crawler-using-go-and-colly-tutorial
+// https://code.visualstudio.com/docs/cpp/config-mingw
 package main
 
 import (
-	"bufio"
-	"strings"
-	"os"
 	"fmt"
-	"log"
 	"net/url"
-	"github.com/gocolly/colly"
+	"strings"
+
+	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/widget"
+	"github.com/gocolly/colly/v2"
 )
+
 // CustomError is a struct to hold error messages and additional information.
 type CustomError struct {
 	Message string
@@ -75,98 +78,78 @@ func checkURLValidity(inputURL string) []error {
 	return errors
 }
 
-
 func main() {
-	// Define the baseURL list for user input
-	inputURLs := [] string {}
+	// Create a new Fyne application instance.
+	myApp := app.New()
+	myWindow := myApp.NewWindow("Go Web Crawler")
 
-	// Create scanner to read user input (urls)
-	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Print("Enter website urls (separated by spaces): ")
+	// Entry widget to take user input.
+	entry := widget.NewEntry()
 
-	// Read the input from the user
-	for scanner.Scan(){
-		input := scanner.Text()
+	// MultiLineEntry widget to display the crawled data.
+	textArea := widget.NewMultiLineEntry()
 
-		// Split the input into individual URLs (assuming they are separated by spaces)
-		urls := strings.Fields(input)
+	// Button widget to start the crawling process.
+	startButton := widget.NewButton("Start Crawling", func() {
+		inputURLs := strings.Fields(entry.Text)
+		if len(inputURLs) > 0 {
+			// Clear the text area before starting the crawling process.
+			textArea.SetText("")
 
-		// Check if valid URLs are provided 
-		if len(urls) > 0 {
-			//Append input to list 
-			inputURLs = append(inputURLs, urls...)
-			break
-		} else {
-			fmt.Println("Please enter at least one valid URL.")
-			fmt.Print("Enter website urls (separated by spaces): ")
-		}
-	}
+			// Create a new Colly collector (crawler) with the specified settings.
+			c := colly.NewCollector(
+				colly.MaxDepth(0),           // Set the maximum depth of the crawling process (0 means no limit).
+				colly.Async(true),           // Enable asynchronous scraping.
+				colly.IgnoreRobotsTxt(),     // Ignore the robots.txt file.
+			)
 
-	// Print the list of URLs
-	fmt.Println("List of URLs:", inputURLs)
+			// OnScraped is triggered after the program finishes scraping a resource.
+			// It appends the URL of the finished resource to the text area.
+			c.OnScraped(func(r *colly.Response) {
+				textArea.SetText(textArea.Text + fmt.Sprintf("Finished %s\n", r.Request.URL))
+			})
 
-	// Create a new Colly collector (crawler) with the specified settings.
-	c := colly.NewCollector(
-		colly.MaxDepth(0),                    // Set the maximum depth of the crawling process (0 means no limit).
-		colly.Async(true),          // Enable asynchronous scraping.
-		colly.IgnoreRobotsTxt(),              // Ignore the robots.txt file.
-	)
+			// OnError is triggered if an error occurs while processing a request.
+			c.OnError(func(r *colly.Response, err error) {
+				textArea.SetText(textArea.Text + fmt.Sprintf("Something went wrong, https:%s\n", err))
+			})
 
-	// The following are various callback functions to handle different events during the crawling process:
-	// Set a custom User-Agent string in the request headers
-	c.OnRequest(func(r *colly.Request) {
-		r.Headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
-	})
-
-	// OnError is triggered if an error occurs while processing a request.
-	c.OnError(func(r *colly.Response, err error) {
-		log.Println("Something went wrong, https:", err)
-	})
-
-	// OnResponse is triggered when the program receives a response from the server.
-	c.OnResponse(func(r *colly.Response) {
-		fmt.Printf("Visited: %s (Status: %d, Content-Type: %s)\n", r.Request.URL, r.StatusCode, r.Headers.Get("Content-Type"))
-	})
-
-	// OnHTML is triggered when the program accesses an HTML resource.
-	// It looks for the page title and prints it.
-	c.OnHTML("title", func(e *colly.HTMLElement) {
-		fmt.Printf("Page Title: %s\n", e.Text)
-	})
-
-	// OnHTML is triggered when the program accesses an HTML resource.
-	// It looks for table rows (tr) and prints the content of the first column (td:nth-of-type(1)).
-	c.OnHTML("tr td:nth-of-type(1)", func(e *colly.HTMLElement) {
-		fmt.Println("First column of a table row:", e.Text)
-	})
-
-	// OnXML is triggered if the program receives an XML resource rather than an HTML resource.
-	// In this case, it looks for h1 tags and prints their text.
-	c.OnXML("//h1", func(e *colly.XMLElement) {
-		fmt.Println(e.Text)
-	})
-
-	// OnScraped is triggered after the program finishes scraping a resource.
-	// It prints the URL of the finished resource.
-	c.OnScraped(func(r *colly.Response) {
-		fmt.Println("Finished", r.Request.URL)
-	})
-
-	// Start the crawling process by visiting the inputURLs and checking for url validity.
-	for _, inputURL := range inputURLs {
-		// Handle the list of errors returned by checkURLValidity()
-		errors := checkURLValidity(inputURL)
-		if len(errors) > 0 {
-			fmt.Println("url: ", inputURL)
-			for _, err := range errors {
-				fmt.Println(err.Error())
+			// Start the crawling process by visiting the inputURLs and checking for url validity.
+			for _, inputURL := range inputURLs {
+				// Handle the list of errors returned by checkURLValidity()
+				errors := checkURLValidity(inputURL)
+				if len(errors) > 0 {
+					textArea.SetText(textArea.Text + fmt.Sprintf("url: %s\n", inputURL))
+					for _, err := range errors {
+						textArea.SetText(textArea.Text + err.Error() + "\n")
+					}
+				} else {
+					// If the URL is valid, visit it using colly
+					c.Visit(inputURL)
+				}
 			}
+
+			// Wait for the asynchronous scraping to finish.
+			c.Wait()
 		} else {
-			// If the URL is valid, visit it using colly
-			c.Visit(inputURL)
+			// If no valid URLs are provided, display an error message.
+			textArea.SetText("Please enter at least one valid URL.")
 		}
+	})
+
+	// Create a form to organize the widgets.
+	form := &widget.Form{
+		Items: []*widget.FormItem{
+			{Text: "Enter website urls (separated by spaces):", Widget: entry},
+			{Text: "Crawling Logs:", Widget: textArea},
+		},
+		// OnSubmit: func() {}, // Since we don't want the form to be submitted, leave this empty.
 	}
-	
-	// Wait for the asynchronous scraping to finish.
-	c.Wait()
+
+	// Create a container to hold the form and the start button.
+	content := container.NewVBox(form, startButton)
+
+	// Set the content of the window to the container.
+	myWindow.SetContent(content)
+	myWindow.ShowAndRun()
 }
