@@ -1,5 +1,6 @@
 // Refernce(s): https://www.hoodoo.digital/blog/how-to-make-a-web-crawler-using-go-and-colly-tutorial
 // https://code.visualstudio.com/docs/cpp/config-mingw
+// https://developer.fyne.io/
 package main
 
 import (
