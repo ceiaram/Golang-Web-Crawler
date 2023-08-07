@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/gocolly/colly/v2"
 )
@@ -79,78 +82,97 @@ func checkURLValidity(inputURL string) []error {
 	return errors
 }
 
+
+// ... (Imports and CustomError struct)
+
 func main() {
-	// Create a new Fyne application instance.
 	myApp := app.New()
 	myWindow := myApp.NewWindow("Go Web Crawler")
+	myWindow.Resize(fyne.NewSize(800, 450))
 
-	// Entry widget to take user input.
 	entry := widget.NewEntry()
+	entry.SetPlaceHolder("https://www.example.com")
 
-	// MultiLineEntry widget to display the crawled data.
-	textArea := widget.NewMultiLineEntry()
+	// Create a crawling logs label.
+	crawlingLogsLabel := widget.NewLabel("Crawling Logs")
+	crawlingLogsLabel.Alignment = fyne.TextAlignLeading
 
-	// Button widget to start the crawling process.
-	startButton := widget.NewButton("Start Crawling", func() {
+	crawlingLogs := widget.NewLabel("")
+
+	scrollContainer := container.NewVScroll(crawlingLogs)
+	scrollContainer.SetMinSize(fyne.NewSize(800, 500))
+
+	startButton := widget.NewButtonWithIcon("Start Crawling", theme.ComputerIcon(), func() {
 		inputURLs := strings.Fields(entry.Text)
 		if len(inputURLs) > 0 {
-			// Clear the text area before starting the crawling process.
-			textArea.SetText("")
+			crawlingLogs.SetText("") // Clear the crawling logs before starting the crawling process.
 
-			// Create a new Colly collector (crawler) with the specified settings.
+			// Create a buffered channel to limit concurrent requests.
+			concurrentRequests := make(chan struct{}, 10) 
+
+			// Create a wait group to wait for all goroutines to finish.
+			var wg sync.WaitGroup
+
+			// Create a new Colly collector with the specified settings.
 			c := colly.NewCollector(
-				colly.MaxDepth(0),           // Set the maximum depth of the crawling process (0 means no limit).
-				colly.Async(true),           // Enable asynchronous scraping.
-				colly.IgnoreRobotsTxt(),     // Ignore the robots.txt file.
+				colly.MaxDepth(0),
+				colly.Async(true),
+				colly.IgnoreRobotsTxt(),
 			)
 
 			// OnScraped is triggered after the program finishes scraping a resource.
-			// It appends the URL of the finished resource to the text area.
 			c.OnScraped(func(r *colly.Response) {
-				textArea.SetText(textArea.Text + fmt.Sprintf("Finished %s\n", r.Request.URL))
+				crawlingLogs.SetText(crawlingLogs.Text + fmt.Sprintf("Finished %s\n", r.Request.URL))
+				wg.Done()
 			})
 
 			// OnError is triggered if an error occurs while processing a request.
 			c.OnError(func(r *colly.Response, err error) {
-				textArea.SetText(textArea.Text + fmt.Sprintf("Something went wrong, https:%s\n", err))
+				crawlingLogs.SetText(crawlingLogs.Text + fmt.Sprintf("Something went wrong, https:%s\n\n", err))
+				wg.Done()
 			})
 
 			// Start the crawling process by visiting the inputURLs and checking for url validity.
 			for _, inputURL := range inputURLs {
+				wg.Add(1)
+				concurrentRequests <- struct{}{} // Acquire a slot from the buffered channel.
+
 				// Handle the list of errors returned by checkURLValidity()
 				errors := checkURLValidity(inputURL)
 				if len(errors) > 0 {
-					textArea.SetText(textArea.Text + fmt.Sprintf("url: %s\n", inputURL))
+					crawlingLogs.SetText(crawlingLogs.Text + fmt.Sprintf("url: %s\n", inputURL))
 					for _, err := range errors {
-						textArea.SetText(textArea.Text + err.Error() + "\n")
+						crawlingLogs.SetText(crawlingLogs.Text + err.Error() + "\n\n")
 					}
+					wg.Done()
+					<-concurrentRequests // Release the slot in case of errors.
 				} else {
-					// If the URL is valid, visit it using colly
-					c.Visit(inputURL)
+					// If the URL is valid, visit it using colly in a separate goroutine.
+					go func(url string) {
+						c.Visit(url)
+						<-concurrentRequests // Release the slot when the request is complete.
+					}(inputURL)
 				}
 			}
 
-			// Wait for the asynchronous scraping to finish.
-			c.Wait()
+			// Wait for all goroutines to finish their work.
+			wg.Wait()
 		} else {
-			// If no valid URLs are provided, display an error message.
-			textArea.SetText("Please enter at least one valid URL.")
+			crawlingLogs.SetText("Please enter at least one valid URL.")
 		}
 	})
 
-	// Create a form to organize the widgets.
 	form := &widget.Form{
 		Items: []*widget.FormItem{
-			{Text: "Enter website urls (separated by spaces):", Widget: entry},
-			{Text: "Crawling Logs:", Widget: textArea},
+			{Text: "Enter website urls (separate by spaces and limit to 25):", Widget: entry},
 		},
-		// OnSubmit: func() {}, // Since we don't want the form to be submitted, leave this empty.
 	}
 
-	// Create a container to hold the form and the start button.
-	content := container.NewVBox(form, startButton)
+	clearBtn := widget.NewButtonWithIcon("Reset", theme.CancelIcon(), func(){
+		crawlingLogs.SetText("")
+		entry.SetText("")
+	})
 
-	// Set the content of the window to the container.
-	myWindow.SetContent(content)
+	myWindow.SetContent(container.NewVBox(form, crawlingLogsLabel, scrollContainer, clearBtn, startButton))
 	myWindow.ShowAndRun()
 }
