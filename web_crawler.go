@@ -28,7 +28,7 @@ func (e CustomError) Error() string {
 	return fmt.Sprintf("Error: %s (Code: %d)", e.Message, e.Code)
 }
 
-//Check URL structure and SEO-friendliness
+// Check URL structure and SEO-friendliness
 func checkURLValidity(inputURL string) []error {
 	var errors []error
 	u, err := url.Parse(inputURL)
@@ -37,7 +37,7 @@ func checkURLValidity(inputURL string) []error {
 		// Return a CustomError instance for the parsing error
 		errors = append(errors, CustomError{
 			Message: "There was a parsing error",
-			Code: 500,
+			Code:    500,
 		})
 	}
 
@@ -46,7 +46,7 @@ func checkURLValidity(inputURL string) []error {
 		// Return a CustomError instance for the HTTP error
 		errors = append(errors, CustomError{
 			Message: "HTTP Error",
-			Code: 400,
+			Code:    400,
 		})
 	}
 
@@ -58,15 +58,15 @@ func checkURLValidity(inputURL string) []error {
 	if len(u.Path) > maxURLLength {
 		errors = append(errors, CustomError{
 			Message: "SEO-Friendliness violation length of URL's path is over 100",
-			Code: 199,
+			Code:    199,
 		})
 	}
-	
+
 	// Check if the URL path is descriptive and readable (no query strings or fragments)
 	if u.RawQuery != "" || u.Fragment != "" {
 		errors = append(errors, CustomError{
 			Message: "SEO-Friendliness violation URL's path of either the query string or fragment is empty",
-			Code: 199,
+			Code:    199,
 		})
 	}
 
@@ -74,7 +74,7 @@ func checkURLValidity(inputURL string) []error {
 	if u.Path != strings.ToLower(u.Path) || strings.Contains(u.Path, "_") {
 		errors = append(errors, CustomError{
 			Message: "SEO-Friendliness Violation URL's path contains uppercase letters and/or hyphens",
-			Code: 199,
+			Code:    199,
 		})
 	}
 
@@ -82,6 +82,20 @@ func checkURLValidity(inputURL string) []error {
 	return errors
 }
 
+// Define a map to track visited domains and their corresponding URLs
+var visitedDomains = make(map[string]bool)
+var visitedDomainsMutex sync.Mutex
+
+func normalizeURL(inputURL string) (string, error) {
+	u, err := url.Parse(inputURL)
+	if err != nil {
+		return "", err
+	}
+
+	// Normalize the URL by removing www. and trailing slashes
+	host := strings.TrimPrefix(u.Hostname(), "www.")
+	return fmt.Sprintf("%s://%s", u.Scheme, host), nil
+}
 func main() {
 	myApp := app.New()
 	myWindow := myApp.NewWindow("Go Web Crawler")
@@ -90,7 +104,6 @@ func main() {
 	entry := widget.NewEntry()
 	entry.SetPlaceHolder("https://www.example.com")
 
-	// Create a crawling logs label.
 	crawlingLogsLabel := widget.NewLabel("Crawling Logs")
 	crawlingLogsLabel.Alignment = fyne.TextAlignLeading
 
@@ -104,59 +117,69 @@ func main() {
 		if len(inputURLs) > 0 {
 			crawlingLogs.SetText("") // Clear the crawling logs before starting the crawling process.
 
-			// Create a buffered channel to limit concurrent requests.
-			concurrentRequests := make(chan struct{}, 10) 
-
-			// Create a wait group to wait for all goroutines to finish.
+			concurrentRequests := make(chan struct{}, 10)
 			var wg sync.WaitGroup
 
-			// Create a new Colly collector with the specified settings.
 			c := colly.NewCollector(
 				colly.MaxDepth(0),
 				colly.Async(true),
 				colly.IgnoreRobotsTxt(),
 			)
 
-			// OnScraped is triggered after the program finishes scraping a resource.
 			c.OnScraped(func(r *colly.Response) {
 				crawlingLogs.SetText(crawlingLogs.Text + fmt.Sprintf("Finished %s\n", r.Request.URL))
 				wg.Done()
 			})
 
-			// OnError is triggered if an error occurs while processing a request.
 			c.OnError(func(r *colly.Response, err error) {
 				crawlingLogs.SetText(crawlingLogs.Text + fmt.Sprintf("Something went wrong, https:%s\n\n", err))
 				wg.Done()
 			})
-			
-			newLine := widget.NewLabel("\n")
-			// Start the crawling process by visiting the inputURLs and checking for url validity.
+
+			normalizedURLs := make(map[string]bool)
+			normalizedURLsMutex := sync.Mutex{}
+
+			duplicateLogs := map[string][]string{} // Group duplicate/similar URLs
+
 			for _, inputURL := range inputURLs {
 				wg.Add(1)
-				concurrentRequests <- struct{}{} // Acquire a slot from the buffered channel.
+				concurrentRequests <- struct{}{}
 
-				// Handle the list of errors returned by checkURLValidity()
-				errors := checkURLValidity(inputURL)
-				if len(errors) > 0 {
-					crawlingLogs.SetText(crawlingLogs.Text + fmt.Sprintf("url: %s\n", inputURL))
-					for _, err := range errors {
-						crawlingLogs.SetText(crawlingLogs.Text + err.Error() + "\n")
-					}
-					newLine.SetText(newLine.Text)
+				normalizedURL, err := normalizeURL(inputURL)
+				if err != nil {
+					crawlingLogs.SetText(crawlingLogs.Text + fmt.Sprintf("Invalid URL: %s\n", inputURL))
 					wg.Done()
-					<-concurrentRequests // Release the slot in case of errors.
-				} else {
-					// If the URL is valid, visit it using colly in a separate goroutine.
-					go func(url string) {
-						c.Visit(url)
-						<-concurrentRequests // Release the slot when the request is complete.
-					}(inputURL)
+					<-concurrentRequests
+					continue
 				}
 
-				
+				normalizedURLsMutex.Lock()
+				if normalizedURLs[normalizedURL] {
+					duplicateLogs[normalizedURL] = append(duplicateLogs[normalizedURL], inputURL)
+					wg.Done()
+					normalizedURLsMutex.Unlock()
+					<-concurrentRequests
+					continue
+				}
+				normalizedURLs[normalizedURL] = true
+				normalizedURLsMutex.Unlock()
+
+				// Also add the URL with the opposite scheme (http vs. https)
+				oppositeSchemeURL := toggleScheme(normalizedURL)
+				normalizedURLsMutex.Lock()
+				normalizedURLs[oppositeSchemeURL] = true
+				normalizedURLsMutex.Unlock()
+
+				go func(url string) {
+					c.Visit(url)
+					<-concurrentRequests
+				}(inputURL)
 			}
 
-			// Wait for all goroutines to finish their work.
+			for _, similarURLs := range duplicateLogs {
+				crawlingLogs.SetText(crawlingLogs.Text + fmt.Sprintf("Duplicate or Similar URLs:\n- %s\n", strings.Join(similarURLs, "\n- ")))
+			}
+
 			wg.Wait()
 		} else {
 			crawlingLogs.SetText("Please enter at least one valid URL.")
@@ -169,11 +192,25 @@ func main() {
 		},
 	}
 
-	clearBtn := widget.NewButtonWithIcon("Reset", theme.CancelIcon(), func(){
+	clearBtn := widget.NewButtonWithIcon("Reset", theme.CancelIcon(), func() {
 		crawlingLogs.SetText("")
 		entry.SetText("")
 	})
 
 	myWindow.SetContent(container.NewVBox(form, crawlingLogsLabel, scrollContainer, clearBtn, startButton))
 	myWindow.ShowAndRun()
+}
+
+// Helper function to toggle between http and https schemes
+func toggleScheme(urlStr string) string {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return urlStr
+	}
+	if u.Scheme == "http" {
+		u.Scheme = "https"
+	} else if u.Scheme == "https" {
+		u.Scheme = "http"
+	}
+	return u.String()
 }
