@@ -203,9 +203,21 @@ func main() {
 				normalizedURLsMutex.Unlock()
 
 				go func(url string) {
+					// Measure loading speed
+					duration, err := fetchURL(url)
+					if err != nil {
+						crawlingLogs.SetText(crawlingLogs.Text + fmt.Sprintf("Failed to fetch %s: %s\n", url, err))
+						<-concurrentRequests
+						wg.Done()
+						return
+					}
+					crawlingLogs.SetText(crawlingLogs.Text + fmt.Sprintf("Loaded %s in %v\n", url, duration))
+
+					// Now let Colly visit and scrape the site
 					c.Visit(url)
 					<-concurrentRequests
 				}(inputURL)
+
 			}
 
 			for _, similarURLs := range duplicateLogs {
