@@ -140,10 +140,21 @@ func main() {
 			normalizedURLsMutex := sync.Mutex{}
 
 			duplicateLogs := map[string][]string{} // Group duplicate/similar URLs
-
+			
+			newLine := widget.NewLabel("\n")
 			for _, inputURL := range inputURLs {
 				wg.Add(1)
 				concurrentRequests <- struct{}{}
+				
+				// Handle the list of errors returned by checkURLValidity()
+				errors := checkURLValidity(inputURL)
+				if len(errors) > 0 {
+					crawlingLogs.SetText(crawlingLogs.Text + fmt.Sprintf("url: %s\n", inputURL))
+					for _, err := range errors {
+						crawlingLogs.SetText(crawlingLogs.Text + err.Error() + "\n")
+					}
+				}
+				newLine.SetText(newLine.Text)
 
 				normalizedURL, err := normalizeURL(inputURL)
 				if err != nil {
