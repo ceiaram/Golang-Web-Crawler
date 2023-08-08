@@ -31,6 +31,24 @@ func (e CustomError) Error() string {
 	return fmt.Sprintf("Error: %s (Code: %d)", e.Message, e.Code)
 }
 
+// fetchURL measures the time taken to fetch the content of a URL.
+func fetchURL(urlStr string) (time.Duration, error) {
+	start := time.Now()
+
+	resp, err := http.Get(urlStr)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("got HTTP status code %d", resp.StatusCode)
+	}
+
+	return time.Since(start), nil
+}
+
+
 // Check URL structure and SEO-friendliness
 func checkURLValidity(inputURL string) []error {
 	var errors []error
