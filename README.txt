@@ -4,7 +4,7 @@ This web crawlers implements the following functions:
 
 URL Structure: Review the URL structure for clarity and SEO-friendliness. Use descriptive URLs with relevant keywords.
 
-Duplicate Content: Identify any duplicate content issues on your website and take steps to resolve them.
+Redirection: Identify URL redirection and optimize to direct to one site
 
 Page Loading Speed: Evaluate the page loading speed of different pages and identify opportunities for optimization.
 
