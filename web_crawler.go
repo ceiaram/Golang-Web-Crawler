@@ -15,6 +15,9 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/gocolly/colly/v2"
+
+	"net/http"
+	"time"
 )
 
 // CustomError is a struct to hold error messages and additional information.
